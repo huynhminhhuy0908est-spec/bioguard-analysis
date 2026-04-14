@@ -1,3 +1,4 @@
-streamlit
-mediapipe==0.10.21
-opencv-python-headless
+libgl1
+libglib2.0-0
+libsm6
+libxext6
