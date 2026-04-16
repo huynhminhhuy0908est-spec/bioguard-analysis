@@ -25,17 +25,9 @@ def calculate_angle(a, b, c):
         
     return int(angle)
 
-# Cấu hình danh sách STUN servers mạnh hơn để fix lỗi kết nối trên mobile
+# Cấu hình STUN servers để fix lỗi kết nối
 RTC_CONFIG = RTCConfiguration(
-    {
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302", 
-                     "stun:stun1.l.google.com:19302", 
-                     "stun:stun2.l.google.com:19302", 
-                     "stun:stun3.l.google.com:19302", 
-                     "stun:stun4.l.google.com:19302"]}
-        ]
-    }
+    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]}]}
 )
 
 # ==========================================
@@ -43,44 +35,53 @@ RTC_CONFIG = RTCConfiguration(
 # ==========================================
 class PoseProcessor(VideoProcessorBase):
     def __init__(self):
+        # Khởi tạo MediaPipe Pose một cách an toàn
         self.mp_pose = mp.solutions.pose
-        self.pose = self.mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         self.mp_drawing = mp.solutions.drawing_utils
+        # model_complexity=0 giúp chạy nhẹ hơn trên CPU của Cloud
+        self.pose = self.mp_pose.Pose(
+            static_image_mode=False,
+            model_complexity=0, 
+            min_detection_confidence=0.5, 
+            min_tracking_confidence=0.5
+        )
         self.target_leg = "Chân Trái"
 
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
+        
+        # Chuyển đổi màu sắc để MediaPipe xử lý
         image_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         results = self.pose.process(image_rgb)
         
         if results.pose_landmarks:
             landmarks = results.pose_landmarks.landmark
             try:
-                # Xác định các điểm mốc dựa trên chân được chọn
+                # Lấy tọa độ dựa trên lựa chọn chân
                 if self.target_leg == "Chân Trái":
-                    hip = [landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value].y]
-                    knee = [landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE.value].x, landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-                    ankle = [landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                    hip = [landmarks[self.mp_pose.PoseLandmark.LEFT_HIP].x, landmarks[self.mp_pose.PoseLandmark.LEFT_HIP].y]
+                    knee = [landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE].x, landmarks[self.mp_pose.PoseLandmark.LEFT_KNEE].y]
+                    ankle = [landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE].x, landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE].y]
                 else:
-                    hip = [landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-                    knee = [landmarks[self.mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[self.mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-                    ankle = [landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+                    hip = [landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP].x, landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP].y]
+                    knee = [landmarks[self.mp_pose.PoseLandmark.RIGHT_KNEE].x, landmarks[self.mp_pose.PoseLandmark.RIGHT_KNEE].y]
+                    ankle = [landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE].x, landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE].y]
                 
                 angle = calculate_angle(hip, knee, ankle)
                 
-                # Logic hiển thị và cảnh báo
+                # Logic hiển thị
                 h, w, _ = img.shape
                 knee_pos = tuple(np.multiply(knee, [w, h]).astype(int))
                 
-                color = (0, 255, 0) # Xanh - An toàn
+                color = (0, 255, 0) # Xanh
                 status = "AN TOAN"
                 
                 if angle < 90:
-                    color = (0, 0, 255) # Đỏ - Nguy hiểm
+                    color = (0, 0, 255) # Đỏ
                     status = "NGUY HIEM: Gap goi qua gat!"
                     cv2.circle(img, knee_pos, 15, color, -1)
                 elif angle < 120:
-                    color = (0, 255, 255) # Vàng - Cảnh báo
+                    color = (0, 255, 255) # Vàng
                     status = "CANH BAO: Chiu tai lon"
 
                 cv2.putText(img, f"Goc: {angle} do", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
@@ -102,18 +103,18 @@ class PoseProcessor(VideoProcessorBase):
 # 3. GIAO DIỆN NGƯỜI DÙNG
 # ==========================================
 st.title("🏃‍♂️ BioGuard Pro: Biomechanical Analysis")
-st.markdown("Hệ thống AI theo dõi biên độ vận động và cảnh báo rủi ro chấn thương khớp gối.")
+st.markdown("Hệ thống AI theo dõi biên độ vận động và cảnh báo rủi ro chấn thương.")
 
 st.sidebar.header("⚙️ Cài đặt hệ thống")
 input_source = st.sidebar.radio("Nguồn Video:", ("Camera Trực Tiếp", "Tải Video lên"))
 target_leg_choice = st.sidebar.selectbox("Chân cần phân tích:", ("Chân Trái", "Chân Phải"))
 
 if input_source == "Camera Trực Tiếp":
-    st.info("Nhấn 'START' để cấp quyền truy cập Camera.")
     webrtc_ctx = webrtc_streamer(
         key="bioguard-camera",
+        mode=None, # Mặc định là SENDRECV
         video_processor_factory=PoseProcessor,
-        rtc_configuration=RTC_CONFIG, # Đã cập nhật STUN servers
+        rtc_configuration=RTC_CONFIG,
         media_stream_constraints={"video": True, "audio": False},
         async_transform=True
     )
@@ -129,11 +130,9 @@ else:
         cap = cv2.VideoCapture(tfile.name)
         stframe = st.empty()
         
-        mp_pose = mp.solutions.pose
-        mp_drawing = mp.solutions.drawing_utils
-        
         if st.sidebar.button("Bắt đầu Phân tích", type="primary"):
-            with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+            # Sử dụng model_complexity=0 để tối ưu tốc độ
+            with mp.solutions.pose.Pose(min_detection_confidence=0.5, model_complexity=0) as pose:
                 while cap.isOpened():
                     ret, frame = cap.read()
                     if not ret: break
@@ -142,25 +141,24 @@ else:
                     results = pose.process(image)
                     
                     if results.pose_landmarks:
-                        landmarks = results.pose_landmarks.landmark
                         try:
-                            # Sửa lỗi .value để lấy đúng tọa độ
+                            landmarks = results.pose_landmarks.landmark
                             if target_leg_choice == "Chân Trái":
-                                hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-                                knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-                                ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                                pts = [landmarks[mp.solutions.pose.PoseLandmark.LEFT_HIP], 
+                                       landmarks[mp.solutions.pose.PoseLandmark.LEFT_KNEE], 
+                                       landmarks[mp.solutions.pose.PoseLandmark.LEFT_ANKLE]]
                             else:
-                                hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-                                knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-                                ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+                                pts = [landmarks[mp.solutions.pose.PoseLandmark.RIGHT_HIP], 
+                                       landmarks[mp.solutions.pose.PoseLandmark.RIGHT_KNEE], 
+                                       landmarks[mp.solutions.pose.PoseLandmark.RIGHT_ANKLE]]
+                            
+                            hip = [pts[0].x, pts[0].y]
+                            knee = [pts[1].x, pts[1].y]
+                            ankle = [pts[2].x, pts[2].y]
                             
                             angle = calculate_angle(hip, knee, ankle)
-                            
-                            # Hiển thị kết quả lên frame video tải lên
-                            color = (0, 255, 0) if angle >= 120 else (255, 255, 0) if angle >= 90 else (255, 0, 0)
                             cv2.putText(image, f"Goc: {angle} do", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                            
-                            mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                            mp.solutions.drawing_utils.draw_landmarks(image, results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
                         except: pass
                     
                     stframe.image(image, channels="RGB", use_column_width=True)
