@@ -25,9 +25,17 @@ def calculate_angle(a, b, c):
         
     return int(angle)
 
-# Cấu hình STUN server của Google để hỗ trợ kết nối qua nhiều loại mạng
+# Cấu hình danh sách STUN servers mạnh hơn để fix lỗi kết nối trên mobile
 RTC_CONFIG = RTCConfiguration(
-    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]}]}
+    {
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302", 
+                     "stun:stun1.l.google.com:19302", 
+                     "stun:stun2.l.google.com:19302", 
+                     "stun:stun3.l.google.com:19302", 
+                     "stun:stun4.l.google.com:19302"]}
+        ]
+    }
 )
 
 # ==========================================
@@ -105,7 +113,7 @@ if input_source == "Camera Trực Tiếp":
     webrtc_ctx = webrtc_streamer(
         key="bioguard-camera",
         video_processor_factory=PoseProcessor,
-        rtc_configuration=RTC_CONFIG,
+        rtc_configuration=RTC_CONFIG, # Đã cập nhật STUN servers
         media_stream_constraints={"video": True, "audio": False},
         async_transform=True
     )
@@ -136,19 +144,19 @@ else:
                     if results.pose_landmarks:
                         landmarks = results.pose_landmarks.landmark
                         try:
-                            # Đồng bộ logic lấy tọa độ chân
+                            # Sửa lỗi .value để lấy đúng tọa độ
                             if target_leg_choice == "Chân Trái":
-                                hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP].y]
-                                knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE].x, landmarks[mp_pose.PoseLandmark.LEFT_KNEE].y]
-                                ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE].y]
+                                hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+                                knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
+                                ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
                             else:
-                                hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP].y]
-                                knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE].y]
-                                ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].y]
+                                hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+                                knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
+                                ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
                             
                             angle = calculate_angle(hip, knee, ankle)
                             
-                            # Vẽ lên ảnh (RGB)
+                            # Hiển thị kết quả lên frame video tải lên
                             color = (0, 255, 0) if angle >= 120 else (255, 255, 0) if angle >= 90 else (255, 0, 0)
                             cv2.putText(image, f"Goc: {angle} do", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
                             
