@@ -1,5 +1,4 @@
 import os
-# Ép hệ thống không sử dụng phần cứng ảo để tránh lỗi bootstrap trên Cloud
 os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 
 import cv2
@@ -11,30 +10,25 @@ import tempfile
 import av
 
 # ==========================================
-# 1. KHỞI TẠO & CẤU HÌNH
+# 1. CẤU HÌNH HỆ THỐNG
 # ==========================================
-st.set_page_config(page_title="BioGuard Pro - AI Injury Prevention", layout="wide", page_icon="🏃‍♂️")
+st.set_page_config(page_title="BioGuard Pro - AI Analysis", layout="wide", page_icon="🏃‍♂️")
 
-# Giao diện CSS tùy chỉnh cho Dashboard
+# Giao diện Dashboard
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; }
     .status-box { 
-        padding: 20px; 
-        border-radius: 15px; 
-        border: 2px solid #30363d; 
-        text-align: center;
-        background-color: #161b22;
+        padding: 20px; border-radius: 15px; border: 2px solid #30363d; 
+        text-align: center; background-color: #161b22;
     }
     </style>
     """, unsafe_allow_stdio=True)
 
-# Khởi tạo session state để lưu góc nhỏ nhất
 if 'min_angle' not in st.session_state:
     st.session_state.min_angle = 180
 
 def calculate_angle(a, b, c):
-    """Tính góc gập gối chính xác"""
     a, b, c = np.array(a), np.array(b), np.array(c)
     radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
     angle = np.abs(radians * 180.0 / np.pi)
@@ -43,16 +37,14 @@ def calculate_angle(a, b, c):
     return int(angle)
 
 def get_status_info(angle):
-    """Trả về trạng thái và màu sắc"""
     if angle < 90: return "NGUY HIỂM: Gập quá gắt!", (0, 0, 255), "🔴"
     if angle < 120: return "CẢNH BÁO: Tải trọng lớn", (0, 255, 255), "🟡"
     return "AN TOÀN", (0, 255, 0), "🟢"
 
-# Cấu hình WebRTC
 RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 
 # ==========================================
-# 2. XỬ LÝ VIDEO CAMERA (WEBRTC)
+# 2. XỬ LÝ CAMERA (WEBRTC)
 # ==========================================
 class PoseProcessor(VideoProcessorBase):
     def __init__(self):
@@ -69,7 +61,7 @@ class PoseProcessor(VideoProcessorBase):
         if results.pose_landmarks:
             lms = results.pose_landmarks.landmark
             try:
-                # Lấy Index theo chân
+                # Dùng IF-ELSE tường minh để tránh lỗi Syntax
                 if self.target_leg == "Chân Trái":
                     idx = [self.mp_pose.PoseLandmark.LEFT_HIP.value, 
                            self.mp_pose.PoseLandmark.LEFT_KNEE.value, 
@@ -83,17 +75,15 @@ class PoseProcessor(VideoProcessorBase):
                 angle = calculate_angle(pts[0], pts[1], pts[2])
                 status, color, _ = get_status_info(angle)
                 
-                # Hiển thị trên màn hình
                 cv2.putText(img, f"Goc: {angle} deg", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
                 cv2.putText(img, status, (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-                
                 self.mp_drawing.draw_landmarks(img, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
-            except: pass
+            except Exception: pass
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 # ==========================================
-# 3. GIAO DIỆN DASHBOARD
+# 3. GIAO DIỆN CHÍNH
 # ==========================================
 st.title("🏃‍♂️ BioGuard Pro: AI Biomechanical Analysis")
 
@@ -110,7 +100,7 @@ with st.sidebar:
 with main_col:
     if source == "Camera Trực Tiếp":
         ctx = webrtc_streamer(
-            key="bioguard-v3",
+            key="bioguard-final",
             video_processor_factory=PoseProcessor,
             rtc_configuration=RTC_CONFIG,
             media_stream_constraints={"video": True, "audio": False},
@@ -135,4 +125,33 @@ with main_col:
                         res = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                         if res.pose_landmarks:
                             lms = res.pose_landmarks.landmark
-                            p_idx = [23, 25, 27] if leg
+                            # Chọn index khớp xương
+                            if leg_choice == "Chân Trái":
+                                p_idx = [23, 25, 27]
+                            else:
+                                p_idx = [24, 26, 28]
+                                
+                            pts = [[lms[i].x, lms[i].y] for i in p_idx]
+                            ang = calculate_angle(pts[0], pts[1], pts[2])
+                            
+                            if ang < st.session_state.min_angle:
+                                st.session_state.min_angle = ang
+                            
+                            txt, clr, _ = get_status_info(ang)
+                            cv2.putText(frame, f"Goc: {ang}", (30, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, clr, 2)
+                            mp.solutions.drawing_utils.draw_landmarks(frame, res.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
+                        stframe.image(frame, channels="BGR")
+            cap.release()
+
+with side_col:
+    st.subheader("📊 Session Stats")
+    st.metric("Góc gập sâu nhất", f"{st.session_state.min_angle}°")
+    
+    msg, _, icon = get_status_info(st.session_state.min_angle)
+    st.markdown(f"""
+        <div class='status-box'>
+            <h1 style='font-size: 40px;'>{icon}</h1>
+            <p>Trạng thái Session:</p>
+            <h4 style='color: white;'>{msg}</h4>
+        </div>
+    """, unsafe_allow_stdio=True)
